@@ -1,1 +1,0 @@
-# TODO: Minimal Go image to run scans and export results to database
