@@ -2,29 +2,30 @@ package traversal
 
 import (
 	"net"
-	// "dnelson-infosec.com/network-gopher/graph"
+	"dnelson-infosec.com/network-gopher/graph"
 	"syscall"
 	"errors"
 	"fmt"
 )
 
-func destAddr(dest string) ([4]byte, error) {
-    destAddr := [4]byte{0, 0, 0, 0}
-    addrs, err := net.LookupHost(dest)
-    if err != nil {
-        return destAddr, err
-    }
-    addr := addrs[0]
 
-    ipAddr, err := net.ResolveIPAddr("ip", addr)
+func getDestAddr(dest net.IP) ([4]byte, error) {
+	// Placeholder bytes
+    destAddr := [4]byte{0, 0, 0, 0}
+
+	// Get net.IPAddr and check host resolves properly
+    ipAddr, err := net.ResolveIPAddr("ip", dest.String())
+
     if err != nil {
         return destAddr, err
     }
+
+	// Copy IP address bytes to placeholder
     copy(destAddr[:], ipAddr.IP.To4())
     return destAddr, nil
 }
 
-func socketAddr() ([4]byte, error) {
+func getSocketAddr() ([4]byte, error) {
     socketAddr := [4]byte{0, 0, 0, 0}
 
 	// Get current system's interface addresses
@@ -57,17 +58,17 @@ func socketAddr() ([4]byte, error) {
 
 
 
-func Trace(g graph.Graph, destIp net.IP) (graph.Graph, error) {
+func Traverse(g graph.Graph, destIp net.IP) (graph.Graph, error) {
 	/*
 	Send a UDP packet to the destination, with a TTL iterating up from 1, recording the `from` address ICMP `Time Limit Exceeded`
 	Save the previous hop as `start`, and the new hop as `end` in the graph. If the new hop == destination, exit the loop
 	*/
-	var ttl int
 
-	// 2000 Ms timeout
-	timeoutValue := syscall.NsecToTimeval(1000 * 1000 * (int64)(2000))
+	// 2000 Ms timeout, from nanoseconds
+	timeoutMs := int64(2000)
+	timeoutValue := syscall.NsecToTimeval(timeoutMs * int64(1_000_000))
 
-	// Create an IPV4 UDP socket for  
+	// Create an IPV4 UDP socket for  the local interface
 	sendSocket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, syscall.IPPROTO_UDP)
 	defer syscall.Close(sendSocket)
 
@@ -76,31 +77,70 @@ func Trace(g graph.Graph, destIp net.IP) (graph.Graph, error) {
 	}	
 
 	// Create an IPV4 ICMP socket for receiving timeout messages
-	recvSocket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_IP)
+	recvSocket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
 	defer syscall.Close(recvSocket)
 
 	if err != nil {
 		return g, err
 	}	
 
-	// Update the sendsocket's time-to-live
-	syscall.SetsockoptInt(sendSocket, 0x0, syscall.IP_TTL, ttl)
+	// Get local interface address
+	socketAddr, err := getSocketAddr()
+	if err != nil {
+		return g, err
+	}	
 
-	// Update the recvSocket's timeout value
-	syscall.SetsockoptTimeval(recvSocket, syscall.SOL_SOCKET, syscall.SO_RCVBUF, &timeoutValue)
+	destAddr, err := getDestAddr(destIp)
 
-	destAddr := [4]byte{0, 0, 0, 0}
-	copy(destAddr[:], destIp.To4())
+	fmt.Println(destAddr)
+	ttl := 1
+	if err != nil {
+		return g, err
+	}	
 
-	syscall.Bind(recvSocket, &syscall.SockaddrInet4{Port: 33434, Addr: socketAddr})
-	syscall.Sendto(sendSocket, []byte{0x0}, 0, &syscall.SockaddrInet4{Port: 33434, Addr: destAddr})
+	// previousVertex := g.SaveNewVertex()
+	
+	for {
+		// Update the sendsocket's time-to-live
+		syscall.SetsockoptInt(sendSocket, 0x0, syscall.IP_TTL, ttl)
 
-	/* TODO 
-		- Finish this tracert functionality
-			- Test and verify ICMP responses are being properly handled
-			- Figure out the best way to update the graph on-the-fly
-	*/
+		// RESET the recvSocket's timeout value
+		syscall.SetsockoptTimeval(recvSocket, syscall.SOL_SOCKET, syscall.SO_RCVBUF, &timeoutValue)
+		
+		syscall.Bind(recvSocket, &syscall.SockaddrInet4{Port: 33434, Addr: socketAddr})
+		syscall.Sendto(sendSocket, []byte{0x0}, 0, &syscall.SockaddrInet4{Port: 33434, Addr: destAddr})
+		
+		// Define packet size
+		packetSize := make([]byte, int(56))
 
-	g.ConnectVertices(start, end)
-	return g, nil
+		// Receive ICMP packet
+		// (n int, from Sockaddr, err error)
+        _, from, err := syscall.Recvfrom(recvSocket, packetSize, 0)
+		
+		if err != nil {
+			return g, err
+		}
+
+        ip := from.(*syscall.SockaddrInet4).Addr
+        ipString := fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3])
+
+		// Get reverse lookup for a given address
+		// Returns (names []string, err error)
+        // dnsNames, err := net.LookupAddr(ipString)
+		fmt.Println(ipString)
+
+		// Will check if a matching vertex already exists
+		// newVertex = g.SaveNewVertex(net.ParseIP(ipString))
+
+		// previousVertex.OutboundEdges = newVertex
+		// newVertex.InboundEdges = previousVertex
+		// previousVertex = newVertex
+ 
+        // We stop our loop if we reach destination or reach max value for ttl
+        if ipString == destIp.String() || ttl >= 56 { 
+			return g, nil
+        }
+
+        ttl += 1
+	}
 }

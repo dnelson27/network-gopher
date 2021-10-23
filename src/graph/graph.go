@@ -7,7 +7,7 @@ type Graph struct {
 }
 
 type Vertex struct {
-	PublicIP net.IP
+	VertexIP net.IP
 	Edges    map[string]Edge
 }
 
@@ -16,24 +16,23 @@ type Edge struct {
 	From Vertex
 }
 
-func (g *Graph) SaveNewVertex(publicIp net.IP) (Vertex, error) {
+func (g *Graph) SaveNewVertex(ip net.IP) Vertex {
 
 	// add vertex to graph
-	vertex := Vertex{PublicIP: publicIp}
+	vertex := Vertex{VertexIP: ip}
 
 	// Init the vertices map
 	if g.Vertices == nil {
 		g.Vertices = make(map[string]Vertex)
 	}
 
-	g.Vertices[publicIp.String()] = vertex
+	g.Vertices[ip.String()] = vertex
 	vertex.Edges = make(map[string]Edge)
 
-	return vertex, nil
+	return vertex
 }
 
-func (g *Graph) ConnectVertices(toAddr, fromAddr net.IP) error {
-	var err error
+func (g *Graph) ConnectVertices(toAddr, fromAddr net.IP) {
 	var toVertex Vertex
 	var fromVertex Vertex
 	toAddrString := toAddr.String()
@@ -42,22 +41,16 @@ func (g *Graph) ConnectVertices(toAddr, fromAddr net.IP) error {
 	if value, ok := g.Vertices[toAddrString]; ok {
 		toVertex = value
 	} else {
-		toVertex, err = g.SaveNewVertex(toAddr)
+		toVertex = g.SaveNewVertex(toAddr)
 	}
 
 	if value, ok := g.Vertices[fromAddrString]; ok {
 		fromVertex = value
 	} else {
-		fromVertex, err = g.SaveNewVertex(fromAddr)
-	}
-
-	if err != nil {
-		return err
+		fromVertex = g.SaveNewVertex(fromAddr)
 	}
 
 	// (from: Vertex)-[:Edge]->(to: Vertex)
 	fromVertex.Edges[toAddrString] = Edge{To: fromVertex, From: toVertex}
-
-	return nil
 
 }

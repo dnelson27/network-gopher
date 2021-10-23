@@ -3,4 +3,11 @@ This project is a work-in-progress. **Network Gopher** is a small tool used to r
 
 I am taking inspiration and ideas from:
 - https://github.com/caffix/netmap
-- https://github.com/OWASP/Amass
+- https://github.com/kalbhor/tracesite
+
+## TO DO
+- Finish traceroute functionality (verify ICMP responses from each hop are being properly handled)
+- Get some basic stdout output for the graph
+- Figure out the visualization part
+
+
